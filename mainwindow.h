@@ -28,6 +28,7 @@
 #include <QDateTime>
 #include <curl/curl.h>
 #include <pigpiod_if2.h> // The header for using GPIO pins on Raspberry
+#include "ds1820.h"
 
 QT_FORWARD_DECLARE_CLASS(QFile)
 
@@ -53,6 +54,7 @@ public:
     struct upload_status upload_ctx;
 
 public slots:
+    void onTimeToUpdateStatus();
     void onTimeToResendAlarm();
     void restoreSettings();
 
@@ -73,17 +75,18 @@ private:
     QFile*             pLogFile;
     QString            sLogFileName;
     QTimer             updateTimer;
-    uint32_t           updateInterval;
+    int32_t            updateInterval;
     QTimer             resendTimer;
-    uint32_t           resendInterval;
+    int32_t            resendInterval;
     QDateTime          startTime;
     QDateTime          rotateLogTime;
     QDateTime          currentTime;
     int                gpioHostHandle;
-    int                gpioSensorPin;
+    uint               gpioSensorPin;
     bool               bOnAlarm;
     bool               bAlarmMessageSent;
     QString            sTdata;
+    double             dMaxTemperature;
 
     QString            sUsername;
     QString            sPassword;
@@ -92,4 +95,5 @@ private:
     QString            sCc;
     QString            sCc1;
     QString            sMessageText;
+    DS1820*            pTemperatureSensor;
 };

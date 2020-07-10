@@ -1,0 +1,125 @@
+// forse queste due  non servono più !!!
+$ sudo apt install gpiod
+$ sudo apt install libgpiod-dev
+
+// Installa la parte grafica di php
+$ sudo apt install php7.3-gd
+
+
+$ sudo nano /lib/systemd/system/smartAlert.service
+
+
+[Unit]
+Description=Smart Alert System
+After= network-online.target pigpiod.service
+
+[Service]
+ExecStart=/home/pi/smartAlert
+User=pi
+Restart=always
+RestartSec=60s
+KillMode=process
+TimeoutSec=infinity
+
+[Install]
+WantedBy=multi-user.target
+
+
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart smartAlert.service
+$ sudo systemctl status smartAlert.service
+$ sudo systemctl enable smartAlert.service
+
+
+// Da verificare:
+// you should not put the executable in your home folder.
+// Instead, put it under /etc/systemd/system/
+
+
+// Generare un "Self Signed Certificate" per https su Apache2
+$ sudo openssl genrsa -out ca.key 2048
+$ sudo openssl req -nodes -new -key ca.key -out ca.csr
+$ sudo openssl x509 -req -days 825 -in ca.csr -signkey ca.key -out ca.crt
+$ sudo mkdir /etc/apache2/ssl
+$ sudo cp ca.crt ca.key ca.csr /etc/apache2/ssl/
+$ sudo a2enmod ssl
+$ sudo systemctl restart apache2.service
+$ sudo nano /etc/apache2/sites-enabled/000-default.conf
+
+Comment all the content (adding # as the first row character)
+and insert the following text:
+
+<VirtualHost *:80>
+                ServerName raspberrypi.local
+                Redirect permanent / https://raspberrypi.local/
+</VirtualHost>
+
+<VirtualHost *:443>
+                ServerName www.raspberrypi.local
+                ServerAlias *.raspberypi.* raspberrypi.*
+                ServerAdmin webmaster@localhost
+                DocumentRoot /var/www/html
+                RewriteEngine On
+                RewriteCond %{HTTPS} !=on
+                RewriteCond %{HTTP_HOST} !^(localhost|127.0.0.1)
+                RewriteRule ^/(.*) https://raspberrypi.local/$1 [R,L]
+                ErrorLog ${APACHE_LOG_DIR}/error.log
+                CustomLog ${APACHE_LOG_DIR}/access.log combined
+                SSLEngine on
+                SSLCertificateFile /etc/apache2/ssl/ca.crt
+                SSLCertificateKeyFile /etc/apache2/ssl/ca.key
+</VirtualHost>
+
+$ sudo a2enmod rewrite
+$ sudo systemctl restart apache2.service
+
+
+
+// To retrieve the SSL public certificate of the site, use:
+
+    $ openssl s_client -connect smtp.gmail.com:465 | tee logfile
+
+// The certificate is the portion marked by
+----BEGIN CERTIFICATE---- and
+---END CERTIFICATE----.
+
+// Save that certificate into a file.
+
+// Step 1:	Identify which directory your OpenSSL installation uses.
+    $ openssl version -d
+    OPENSSLDIR: "/usr/lib/ssl"
+
+// Step 2: Change to that directory and list the directory contents.
+        You should see a directory called certs.
+    $ cd /usr/lib/ssl && ls -al
+    drwxr-xr-x  3 root root  4096 mar 17 17:39 .
+    drwxr-xr-x 95 root root 12288 giu 10 14:31 ..
+    lrwxrwxrwx  1 root root    14 mar 29  2018 certs -> /etc/ssl/certs
+    drwxr-xr-x  2 root root  4096 mar 17 17:39 misc
+    lrwxrwxrwx  1 root root    20 set 27  2019 openssl.cnf -> /etc/ssl/openssl.cnf
+    lrwxrwxrwx  1 root root    16 mar 29  2018 private -> /etc/ssl/private
+
+// Step 3: Change to that directory.
+    $ cd certs
+
+// List the directory contents.
+// You should see from the symlinks that the certificates are actually
+// stored in /usr/share/ca-certificates.
+
+// Step 4: Change to /usr/share/ca-certificates directory and add
+//        your self-signed certificate there, (ex: your.cert.name.crt)
+
+// Step 5: Change to /etc directory and edit the file ca-certificates.conf.
+    $ cd /etc
+    $ nano ca-certificates.conf
+
+// Add your.cert.name.crt to the file (ca-certificates.conf) and save it.
+
+// Last Step: Execute the program update-ca-certificates –fresh.
+// Note: You might like to backup /etc/ssl/certs before executing the command.
+
+    $ sudo update-ca-certificates --fresh
+    Clearing symlinks in /etc/ssl/certs...done.
+    Updating certificates in /etc/ssl/certs....done.
+    Running hooks in /etc/ca-certificates/update.d....done.
+

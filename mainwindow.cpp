@@ -37,7 +37,7 @@
 
 size_t
 payloadSource(void *ptr, size_t size, size_t nmemb, void *userp) {
-    struct upload_status* upload_ctx = (struct upload_status*)userp;
+    struct upload_status* upload_ctx = static_cast<struct upload_status*>(userp);
     if((size == 0) || (nmemb == 0) || ((size*nmemb) < 1))
         return 0;
     if(upload_ctx->lines_read >= upload_ctx->pPayload->count())
@@ -54,6 +54,7 @@ MainWindow::MainWindow(int &argc, char **argv)
     : QCoreApplication(argc, argv)
     , pRecipients(nullptr)
     , pLogFile(nullptr)
+    , pTemperatureSensor(nullptr)
 {
     gpioHostHandle = -1;
     gpioSensorPin  = 23; // BCM 23: pin 16 in the 40 pins GPIO connector
@@ -84,7 +85,9 @@ MainWindow::MainWindow(int &argc, char **argv)
 int
 MainWindow::exec() {
     // Initialize the GPIO handler
-    gpioHostHandle = pigpio_start((char*)"localhost", (char*)"8888");
+    char host[] = "localhost";
+    char port[] = "8888";
+    gpioHostHandle = pigpio_start(&host[0], &port[0]);
     if(gpioHostHandle >= 0) {
         if(set_mode(gpioHostHandle, gpioSensorPin, PI_INPUT) < 0) {
             logMessage(QString("Unable to initialize GPIO%1 as Output")
@@ -100,22 +103,35 @@ MainWindow::exec() {
     else {
         logMessage(QString("Unable to initialize the Pi GPIO."));
     }
+
+    // Check for the presence of a Temperature Sensor
+    pTemperatureSensor = new DS1820();
+    if(!pTemperatureSensor->isConnected()) {
+        logMessage(QString("No Temperature Sensor Found"));
+        delete pTemperatureSensor;
+        pTemperatureSensor = nullptr;
+    }
+    pTemperatureSensor->setLimits(0.0, dMaxTemperature);
+
+    connect(&updateTimer, SIGNAL(timeout()),
+            this, SLOT(onTimeToUpdateStatus()));
     connect(&resendTimer, SIGNAL(timeout()),
             this, SLOT(onTimeToResendAlarm()));
 
     startTime = QDateTime::currentDateTime();
     rotateLogTime = startTime;
-    // Check the Thermostat Status every minute
+
+    // Check the System Status every minute
     updateTimer.start(updateInterval);
 
-//#ifndef QT_DEBUG
+#ifndef QT_DEBUG
     logMessage("Smart Alert System Started");
     if(sendMail("Smart Alert System [INFO]",
                 "Smart Alert System Has Been Restarted"))
         logMessage("Smart Alert System [INFO]: Message Sent");
     else
         logMessage("Smart Alert System [INFO]: Unable to Send the Message");
-//#endif
+#endif
     return QCoreApplication::exec();
 }
 
@@ -125,13 +141,13 @@ MainWindow::~MainWindow() {
     updateTimer.stop();
     resendTimer.stop();
 
-//#ifndef QT_DEBUG
+#ifndef QT_DEBUG
     if(sendMail("Smart Alert System [INFO]",
                 "Smart Alert Has Been Switched Off"))
         logMessage("Message Sent");
     else
         logMessage("Unable to Send the Switched Off Message");
-//#endif
+#endif
 
     if(gpioHostHandle >= 0)
         pigpio_stop(gpioHostHandle);
@@ -215,6 +231,8 @@ MainWindow::restoreSettings() {
     sCc          = pSettings->value("Cc:",              "").toString();
     sMessageText = pSettings->value("Message to Send:", "").toString();
 
+    dMaxTemperature = pSettings->value("Alarm Threshold", "28.0").toDouble();
+
     logMessage("Settings Changed. New Values Are:");
     logMessage(QString("Username: %1").arg(sUsername));
     logMessage(QString("Mail Server: %1").arg(sMailServer));
@@ -266,6 +284,7 @@ MainWindow::sendMail(QString sSubject, QString sMessage) {
     if(pCurl) {
         QString mailserverURL = QString("smtps://%1")
                                 .arg(sMailServer);
+
         curl_easy_setopt(pCurl, CURLOPT_URL, mailserverURL.toLatin1().constData());
 
         curl_easy_setopt(pCurl, CURLOPT_SSL_VERIFYPEER, 1);
@@ -274,6 +293,7 @@ MainWindow::sendMail(QString sSubject, QString sMessage) {
         QString sMailFrom = QString("<%1@%2>")
                             .arg(sUsername)
                             .arg(sMailServer);
+
         curl_easy_setopt(pCurl, CURLOPT_MAIL_FROM, sMailFrom.toLatin1().constData());
         curl_easy_setopt(pCurl, CURLOPT_USERNAME,  sUsername.toLatin1().constData());
         curl_easy_setopt(pCurl, CURLOPT_PASSWORD,  sPassword.toLatin1().constData());
@@ -282,6 +302,7 @@ MainWindow::sendMail(QString sSubject, QString sMessage) {
         if(sCc != QString()) {
             pRecipients = curl_slist_append(pRecipients, (QString("<%1>").arg(sCc)).toLatin1().constData());
         }
+
         curl_easy_setopt(pCurl, CURLOPT_MAIL_RCPT, pRecipients);
 
         curl_easy_setopt(pCurl, CURLOPT_READFUNCTION, ::payloadSource);
@@ -308,23 +329,54 @@ MainWindow::sendMail(QString sSubject, QString sMessage) {
 
 
 void
+MainWindow::onTimeToUpdateStatus() {
+    bOnAlarm = false;
+    // Check if it's time (every 7 days) to rotate log:
+    if(rotateLogTime.daysTo(QDateTime::currentDateTime()) > 7) {
+        logRotate(sLogFileName);
+        rotateLogTime = QDateTime::currentDateTime();
+    }
+    if(pTemperatureSensor) {
+        logMessage(QString("Temperature: %1, %2")
+                   .arg(double(startTime.secsTo(QDateTime::currentDateTime())/3600.0))
+                   .arg(pTemperatureSensor->readTemperature()));
+        bOnAlarm |= pTemperatureSensor->isOnAlarm();
+    }
+    if(bOnAlarm  && !bAlarmMessageSent) {
+        logMessage("TEMPERATURE ALARM !");
+        if(sendMail("Smart Alert System [ALARM!]",
+                    sMessageText))
+        {
+            bAlarmMessageSent = true;
+            logMessage("Smart Alert System [ALARM!]: Message Sent");
+            // Start a timer to retransmit the alarm message every 30 minutes
+            resendTimer.start(resendInterval);
+        }
+        else {
+            logMessage("PS Temperature Alarm System [ALARM!]: Unable to Send the Message");
+        }
+    }
+}
+
+
+void
 MainWindow::onTimeToResendAlarm() {
     if(!bOnAlarm) {
         logMessage("Temperature Alarm Ceased");
-        if(sendMail("UPS Temperature Alarm System [INFO!]",
+        if(sendMail("Smart Alert System [INFO!]",
                     "Temperature Alarm Ceased"))
-            logMessage("UPS Temperature Alarm System [INFO!]: Message Sent");
+            logMessage("Smart Alert System [INFO!]: Message Sent");
         else
-            logMessage("UPS Temperature Alarm System [INFO!]: Unable to Send the Message");
+            logMessage("Smart Alert System [INFO!]: Unable to Send the Message");
         resendTimer.stop();
         bAlarmMessageSent = false;
     }
     else { // Still on Alarm !
         logMessage("TEMPERATURE ALARM STILL ON!");
-        if(sendMail("UPS Temperature Alarm System [ALARM!]",
+        if(sendMail("Smart Alert System [ALARM!]",
                     sMessageText))
-            logMessage("UPS Temperature Alarm System [ALARM!]: Message Sent");
+            logMessage("Smart Alert System [ALARM!]: Message Sent");
         else
-            logMessage("UPS Temperature Alarm System [ALARM!]: Unable to Send the Message");
+            logMessage("Smart Alert System [ALARM!]: Unable to Send the Message");
     }
 }

@@ -37,8 +37,9 @@ CONFIG -= app_bundle
 TEMPLATE = app
 
 
-SOURCES += main.cpp \
-    mainwindow.cpp
+SOURCES += main.cpp
+SOURCES += mainwindow.cpp
+SOURCES += ds1820.cpp
 
 
 DEFINES += QT_DEPRECATED_WARNINGS
@@ -48,5 +49,9 @@ DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs depr
 LIBS += -lcurl
 LIBS += -lpigpiod_if2
 
-HEADERS += \
-    mainwindow.h
+
+HEADERS += mainwindow.h
+HEADERS += ds1820.h
+
+DISTFILES += \
+    Notes.txt

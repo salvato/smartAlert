@@ -205,7 +205,7 @@ MainWindow::logRotate(QString sLogFileName) {
 void
 MainWindow::logMessage(QString sMessage) {
     QString sDebugMessage = currentTime.currentDateTime().toString("MM dd yyyy hh:mm:ss") +
-            QString(": ") +
+            QString(" - ") +
             sMessage;
 #ifdef QT_DEBUG
     qDebug() << sDebugMessage;

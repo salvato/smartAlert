@@ -111,12 +111,16 @@ MainWindow::exec() {
         delete pTemperatureSensor;
         pTemperatureSensor = nullptr;
     }
-    pTemperatureSensor->setLimits(0.0, dMaxTemperature);
-
-    connect(&updateTimer, SIGNAL(timeout()),
-            this, SLOT(onTimeToUpdateStatus()));
+    else {
+        pTemperatureSensor->setLimits(0.0, dMaxTemperature);
+        logMessage(QString("Temperature: %1, %2")
+                   .arg(double(startTime.secsTo(QDateTime::currentDateTime())/3600.0))
+                   .arg(pTemperatureSensor->readTemperature()));
+        connect(&updateTimer, SIGNAL(timeout()),
+                this, SLOT(onTimeToUpdateStatus()));
+    }
     connect(&resendTimer, SIGNAL(timeout()),
-            this, SLOT(onTimeToResendAlarm()));
+        this, SLOT(onTimeToResendAlarm()));
 
     startTime = QDateTime::currentDateTime();
     rotateLogTime = startTime;
@@ -200,7 +204,7 @@ MainWindow::logRotate(QString sLogFileName) {
 
 void
 MainWindow::logMessage(QString sMessage) {
-    QString sDebugMessage = currentTime.currentDateTime().toString() +
+    QString sDebugMessage = currentTime.currentDateTime().toString("MM dd yyyy hh:mm:ss") +
             QString(": ") +
             sMessage;
 #ifdef QT_DEBUG
@@ -239,6 +243,7 @@ MainWindow::restoreSettings() {
     logMessage(QString("To: %1").arg(sTo));
     if(sCc != QString())
         logMessage(QString("Cc: %1").arg(sCc));
+    logMessage(QString("Threshold: %1").arg(dMaxTemperature));
 
     delete pSettings;
 }

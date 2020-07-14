@@ -46,8 +46,8 @@ $ sudo a2enmod ssl
 $ sudo systemctl restart apache2.service
 $ sudo nano /etc/apache2/sites-enabled/000-default.conf
 
-Comment all the content (adding # as the first row character)
-and insert the following text:
+// Comment all the content (adding # as the first row character)
+// and insert the following text:
 
 <VirtualHost *:80>
                 ServerName raspberrypi.local

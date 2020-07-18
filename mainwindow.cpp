@@ -337,9 +337,10 @@ void
 MainWindow::onTimeToUpdateStatus() {
     bOnAlarm = false;
     // Check if it's time (every 7 days) to rotate log:
-    if(rotateLogTime.daysTo(QDateTime::currentDateTime()) > 7) {
+    if(rotateLogTime.daysTo(QDateTime::currentDateTime()) > 0) {
         logRotate(sLogFileName);
         rotateLogTime = QDateTime::currentDateTime();
+        restoreSettings();
     }
     if(pTemperatureSensor) {
         logMessage(QString("Temperature: %1, %2")
